@@ -33,42 +33,27 @@ public class FormEditAgenda extends javax.swing.JDialog {
         this.isEdit = isEdit;  // Menyimpan status apakah form ini untuk Edit atau Create
 
         initForm(); // Inisialisasi komponen form
-        initListeners(); // Inisialisasi validasi TimePicker
+        setUpTimePickerSettings(); // Mengatur pengaturan TimePicker
     }
 
-    private void initListeners() {
-        // Listener untuk perubahan waktu pada TimePicker "tmMulai" (waktu mulai)
-        tmMulai.addTimeChangeListener((TimeChangeEvent tce) -> {
-            // Ambil waktu baru yang dipilih pada "tmMulai"
-            LocalTime newStartTime = tce.getNewTime();
-            
-            // Cek apakah waktu mulai lebih besar atau sama dengan waktu selesai
-            if (tmSelesai.getTime() != null && newStartTime.isAfter(tmSelesai.getTime())) {
-                // Jika waktu mulai lebih besar dari waktu selesai, tampilkan pesan kesalahan
-                JOptionPane.showMessageDialog(this,
-                        "Waktu mulai tidak bisa lebih dari waktu selesai.",
-                        "Peringatan", JOptionPane.WARNING_MESSAGE);
+    // Method untuk mengatur pengaturan TimePicker
+    private void setUpTimePickerSettings() {
+        // Pengaturan untuk TimePicker 'Mulai' (tmMulai) agar waktu mulai harus sebelum waktu selesai
+        tmMulai.getSettings().setVetoPolicy((LocalTime lt) -> {
+            // Mendapatkan waktu selesai dari TimePicker 'Selesai' (tmSelesai)
+            LocalTime endTime = tmSelesai.getTime();
 
-                // Reset waktu mulai ke waktu sebelumnya jika validasi gagal
-                tmMulai.setTime(tce.getOldTime());
-            }
+            // Mengembalikan true jika waktu selesai lebih besar dari waktu mulai atau waktu selesai belum dipilih
+            return endTime == null || endTime.isAfter(lt);
         });
 
-        // Listener untuk perubahan waktu pada TimePicker "tmSelesai" (waktu selesai)
-        tmSelesai.addTimeChangeListener((TimeChangeEvent tce) -> {
-            // Ambil waktu baru yang dipilih pada "tmSelesai"
-            LocalTime newEndTime = tce.getNewTime();
+        // Pengaturan untuk TimePicker 'Selesai' (tmSelesai) agar waktu selesai harus setelah waktu mulai
+        tmSelesai.getSettings().setVetoPolicy((LocalTime lt) -> {
+            // Mendapatkan waktu mulai dari TimePicker 'Mulai' (tmMulai)
+            LocalTime startTime = tmMulai.getTime();
 
-            // Cek apakah waktu selesai lebih kecil atau sama dengan waktu mulai
-            if (tmMulai.getTime() != null && newEndTime.isBefore(tmMulai.getTime())) {
-                // Jika waktu selesai lebih kecil dari waktu mulai, tampilkan pesan kesalahan
-                JOptionPane.showMessageDialog(this,
-                        "Waktu selesai tidak bisa lebih kecil dari waktu mulai.",
-                        "Peringatan", JOptionPane.WARNING_MESSAGE);
-
-                // Reset waktu selesai ke waktu sebelumnya jika validasi gagal
-                tmSelesai.setTime(tce.getOldTime());
-            }
+            // Mengembalikan true jika waktu mulai lebih kecil dari waktu selesai atau waktu mulai belum dipilih
+            return startTime == null || startTime.isBefore(lt);
         });
     }
 

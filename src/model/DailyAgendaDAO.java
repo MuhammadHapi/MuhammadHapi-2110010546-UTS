@@ -77,7 +77,7 @@ public class DailyAgendaDAO {
     // Method untuk mendapatkan agenda pada LocalDate tertentu
     public List<DailyAgenda> getAgendaByDate(LocalDate date) throws SQLException {
         List<DailyAgenda> agendas = new ArrayList<>();
-        String query = "SELECT * FROM daily_agenda WHERE date = ?";
+        String query = "SELECT * FROM daily_agenda WHERE date = ? ORDER BY start_time";
 
         try (PreparedStatement statement = connection.prepareStatement(query)) {
             statement.setString(1, date.toString()); // Set tanggal sebagai string (yyyy-mm-dd)

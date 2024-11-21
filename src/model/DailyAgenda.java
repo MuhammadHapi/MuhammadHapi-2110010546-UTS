@@ -10,11 +10,12 @@ public class DailyAgenda {
     private String description; // Deskripsi kegiatan
     private LocalTime startTime; // Waktu mulai
     private LocalTime endTime;   // Waktu selesai
-    
+
     // Constructor dengan tanggal saja
     public DailyAgenda(LocalDate date) {
         this(date, null, null, null);
     }
+
     // Constructor tanpa id
     public DailyAgenda(LocalDate date, String description, LocalTime startTime, LocalTime endTime) {
         this.id = -1;

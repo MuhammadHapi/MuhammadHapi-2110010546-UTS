@@ -1,4 +1,7 @@
 
+import java.io.*;
+import org.json.*;
+
 import com.github.lgooddatepicker.components.DatePickerSettings;
 import com.github.lgooddatepicker.optionalusertools.CalendarListener;
 import com.github.lgooddatepicker.zinternaltools.CalendarSelectionEvent;
@@ -10,9 +13,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import javax.swing.DefaultListModel;
+import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
@@ -83,13 +89,14 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
                         default ->
                             new Color(140, 140, 180); // Lavender yang lebih gelap untuk 4 atau lebih agenda
                     };
-                    return new HighlightInformation(highlightColor, null, "Ada agenda!");
+                    return new HighlightInformation(highlightColor, null, String.format("Ada %d agenda!", numAgendas));
                 }
             } catch (SQLException ex) {
                 // Menampilkan error jika terjadi kesalahan dalam mengambil data agenda
                 JOptionPane.showMessageDialog(null, "Terjadi kesalahan saat mengambil data agenda: " + ex.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
             }
+
             // Jika tidak ada agenda, tidak perlu highlight
             return null;
         });
@@ -234,7 +241,168 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
                     "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
-   
+
+    private void exportToJSON() {
+        // Ambil tanggal yang dipilih dari calendarPanel
+        LocalDate selectedDate = calendarPanel1.getSelectedDate();
+
+        // Validasi apakah tanggal tidak null
+        if (selectedDate == null) {
+            JOptionPane.showMessageDialog(this, "Tanggal belum dipilih. Silakan pilih tanggal terlebih dahulu.",
+                    "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Ambil semua agenda dari model listAgendaHarian
+        List<DailyAgenda> agendas = new ArrayList<>();
+        for (int i = 0; i < listAgendaHarian.getModel().getSize(); i++) {
+            agendas.add(listAgendaHarian.getModel().getElementAt(i));
+        }
+
+        // Validasi apakah daftar agenda tidak kosong
+        if (agendas.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Tidak ada agenda untuk tanggal tersebut.",
+                    "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Buat JSONObject root
+        JSONObject json = new JSONObject();
+        json.put("tanggal", selectedDate.toString()); // Tambahkan tanggal
+
+        // Buat JSONArray untuk daftar agenda
+        JSONArray jsonAgendas = new JSONArray();
+        for (DailyAgenda agenda : agendas) {
+            JSONObject jsonAgenda = new JSONObject();
+            jsonAgenda.put("start", agenda.getStartTime().toString());
+            jsonAgenda.put("end", agenda.getEndTime().toString());
+            jsonAgenda.put("deskripsi", agenda.getDescription());
+            jsonAgendas.put(jsonAgenda);
+        }
+        json.put("listAgenda", jsonAgendas);
+
+        // JFileChooser untuk memilih folder
+        JFileChooser folderChooser = new JFileChooser();
+        folderChooser.setDialogTitle("Pilih folder untuk menyimpan file");
+        folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        folderChooser.setCurrentDirectory(new java.io.File(".")); // Default folder saat ini
+
+        int userSelection = folderChooser.showSaveDialog(this);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            File selectedFolder = folderChooser.getSelectedFile();
+            String filePath = selectedFolder.getAbsolutePath() + "/agenda_" + selectedDate + ".json";
+
+            // Simpan ke file
+            try (FileWriter fileWriter = new FileWriter(filePath)) {
+                fileWriter.write(json.toString(4)); // Format JSON dengan indentasi
+                JOptionPane.showMessageDialog(this, "Export berhasil ke file: " + filePath);
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(this, "Gagal mengekspor data: " + e.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void importFromJSON() {
+        // JFileChooser untuk memilih file JSON
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Pilih file JSON untuk diimport");
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("JSON Files", "json"));
+        fileChooser.setCurrentDirectory(new java.io.File(".")); // Default folder saat ini
+
+        int userSelection = fileChooser.showOpenDialog(this);
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+
+            try (FileReader fileReader = new FileReader(selectedFile); BufferedReader bufferedReader = new BufferedReader(fileReader)) {
+
+                StringBuilder jsonStringBuilder = new StringBuilder();
+                String line;
+                while ((line = bufferedReader.readLine()) != null) {
+                    jsonStringBuilder.append(line);
+                }
+
+                // Parse JSON
+                String jsonString = jsonStringBuilder.toString();
+                JSONObject json = new JSONObject(jsonString);
+
+                // Validasi keberadaan key "tanggal" dan "listAgenda"
+                if (!json.has("tanggal") || !json.has("listAgenda")) {
+                    throw new IllegalArgumentException("JSON tidak memiliki key 'tanggal' atau 'listAgenda'.");
+                }
+
+                // Ambil tanggal dan daftar agenda
+                LocalDate importedDate = LocalDate.parse(json.getString("tanggal"));
+                JSONArray jsonAgendas = json.getJSONArray("listAgenda");
+                List<DailyAgenda> importedAgendas = new ArrayList<>();
+
+                for (int i = 0; i < jsonAgendas.length(); i++) {
+                    JSONObject jsonAgenda = jsonAgendas.getJSONObject(i);
+
+                    // Validasi setiap objek agenda
+                    if (!jsonAgenda.has("start") || !jsonAgenda.has("end") || !jsonAgenda.has("deskripsi")) {
+                        throw new IllegalArgumentException("JSON agenda tidak lengkap pada index " + i);
+                    }
+
+                    // Buat agenda baru
+                    LocalTime startTime = LocalTime.parse(jsonAgenda.getString("start"));
+                    LocalTime endTime = LocalTime.parse(jsonAgenda.getString("end"));
+                    String description = jsonAgenda.getString("deskripsi");
+
+                    DailyAgenda agenda = new DailyAgenda(importedDate, description, startTime, endTime);
+                    importedAgendas.add(agenda);
+                }
+
+                String confirmPrompt = null;
+                if (!importedDate.equals(calendarPanel1.getSelectedDate())) {
+                    // Jika tanggal berbeda
+                    confirmPrompt = "Tanggal yang diimpor berbeda dengan tanggal yang dipilih. Apakah Anda tetap ingin melanjutkan?";
+                } else if (listAgendaHarian.getModel().getSize() > 0) {
+                    // Jika agenda untuk tanggal yang sama sudah ada
+                    confirmPrompt = "Agenda untuk tanggal yang sama sudah ada. Apakah Anda ingin mengganti semua agenda?";
+                }
+
+                // Cek apakah konfirmasi perlu ditampilkan dan apakah pengguna memilih untuk melanjutkan
+                boolean confirm = confirmPrompt == null
+                        || JOptionPane.showConfirmDialog(this,
+                                confirmPrompt,
+                                "Konfirmasi Impor",
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.WARNING_MESSAGE
+                        ) == JOptionPane.YES_OPTION;
+
+                if (confirm) {
+                    // Hapus semua agenda sebelumnya
+                    for (int i = 0; i < listAgendaHarian.getModel().getSize(); i++) {
+                        DailyAgenda agenda = listAgendaHarian.getModel().getElementAt(i);
+                        dailyAgendaDAO.deleteAgenda(agenda);
+                    }
+
+                    // Tambahkan agenda baru
+                    for (DailyAgenda agenda : importedAgendas) {
+                        // Pastikan agenda menggunakan tanggal yang dipilih di calendarPanel, bukan tanggal yang diimpor
+                        agenda.setDate(calendarPanel1.getSelectedDate());
+                        dailyAgendaDAO.createAgenda(agenda);
+                    }
+
+                    // Tampilkan pesan sukes
+                    JOptionPane.showMessageDialog(this, "Import berhasil! Agenda telah diperbarui.", "Informasi", JOptionPane.INFORMATION_MESSAGE);
+
+                    // Update tampilan 
+                    updateAgendaList();
+                }
+            } catch (IllegalArgumentException e) {
+                // Jika ada key yang hilang
+                JOptionPane.showMessageDialog(this, "Format JSON tidak valid: " + e.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            } catch (Exception e) {
+                // Jika terjadi error lain
+                JOptionPane.showMessageDialog(this, "Gagal mengimpor data: " + e.getMessage(),
+                        "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -252,8 +420,12 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
         listAgendaHarian = new javax.swing.JList<>();
         jPanel3 = new javax.swing.JPanel();
         jButton1 = new javax.swing.JButton();
+        jButton4 = new javax.swing.JButton();
+        jButton2 = new javax.swing.JButton();
+        jButton3 = new javax.swing.JButton();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+        setPreferredSize(new java.awt.Dimension(400, 600));
         setResizable(false);
 
         jPanel4.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 24, 24, 24));
@@ -270,7 +442,7 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
 
         jPanel2.setLayout(new java.awt.BorderLayout());
 
-        panelAgendaHarian.setBorder(javax.swing.BorderFactory.createTitledBorder("List Agenda"));
+        panelAgendaHarian.setBorder(javax.swing.BorderFactory.createTitledBorder(null, "List Agenda", javax.swing.border.TitledBorder.DEFAULT_JUSTIFICATION, javax.swing.border.TitledBorder.TOP));
 
         listAgendaHarian.setModel(new DefaultListModel<>());
         listAgendaHarian.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
@@ -280,7 +452,7 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
         jPanel2.add(panelAgendaHarian, java.awt.BorderLayout.CENTER);
 
         jPanel3.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 0, 12, 0));
-        jPanel3.setLayout(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 5));
+        jPanel3.setLayout(new java.awt.GridLayout(2, 2, 4, 4));
 
         jButton1.setText("Buat Agenda");
         jButton1.addActionListener(new java.awt.event.ActionListener() {
@@ -289,6 +461,30 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
             }
         });
         jPanel3.add(jButton1);
+
+        jButton4.setText("Clear Agenda");
+        jButton4.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton4ActionPerformed(evt);
+            }
+        });
+        jPanel3.add(jButton4);
+
+        jButton2.setText("Import JSON");
+        jButton2.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton2ActionPerformed(evt);
+            }
+        });
+        jPanel3.add(jButton2);
+
+        jButton3.setText("Export JSON");
+        jButton3.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton3ActionPerformed(evt);
+            }
+        });
+        jPanel3.add(jButton3);
 
         jPanel2.add(jPanel3, java.awt.BorderLayout.SOUTH);
 
@@ -300,12 +496,80 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        // Menampilkan dialog FormEditAgenda untuk menambah agenda baru
-        DailyAgenda dailyAgenda = new DailyAgenda(calendarPanel1.getSelectedDate());
+        // Validasi apakah tanggal sudah dipilih
+        LocalDate selectedDate = calendarPanel1.getSelectedDate();
+        if (selectedDate == null) {
+            // Jika tanggal belum dipilih, tampilkan peringatan
+            JOptionPane.showMessageDialog(this, "Silakan pilih tanggal terlebih dahulu.", "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return; // Keluar dari method jika tanggal belum dipilih
+        }
+
+        // Jika tanggal sudah dipilih, lanjutkan untuk menambah agenda
+        DailyAgenda dailyAgenda = new DailyAgenda(selectedDate);
         FormEditAgenda dialog = new FormEditAgenda(this, dailyAgenda, dailyAgendaDAO, false);
         dialog.setVisible(true);
+
+        // Setelah dialog ditutup, update daftar agenda
         updateAgendaList();
     }//GEN-LAST:event_jButton1ActionPerformed
+
+    private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
+        importFromJSON();
+    }//GEN-LAST:event_jButton2ActionPerformed
+
+    private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton3ActionPerformed
+        exportToJSON();
+    }//GEN-LAST:event_jButton3ActionPerformed
+
+    private void jButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton4ActionPerformed
+        // Cek apakah ada tanggal yang dipilih
+        if (calendarPanel1.getSelectedDate() == null) {
+            // Jika tidak ada tanggal yang dipilih, beri peringatan
+            JOptionPane.showMessageDialog(this, "Silakan pilih tanggal terlebih dahulu.", "Peringatan", JOptionPane.WARNING_MESSAGE);
+            return; // Keluar dari method jika tanggal belum dipilih
+        }
+
+        // Periksa apakah ada agenda pada hari yang dipilih
+        if (listAgendaHarian.getModel().getSize() > 0) {
+            // Tampilkan konfirmasi sebelum menghapus agenda
+            int confirm = JOptionPane.showConfirmDialog(
+                    this,
+                    "Apakah Anda yakin ingin menghapus semua agenda pada tanggal " + calendarPanel1.getSelectedDate() + "?",
+                    "Konfirmasi Hapus Agenda",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            // Jika pengguna memilih YES
+            if (confirm == JOptionPane.YES_OPTION) {
+                try {
+                    // Hapus semua agenda yang ada pada JList
+                    for (int i = 0; i < listAgendaHarian.getModel().getSize(); i++) {
+                        // Ambil setiap agenda dari JList
+                        DailyAgenda agenda = listAgendaHarian.getModel().getElementAt(i);
+
+                        // Hapus agenda tersebut dari database
+                        dailyAgendaDAO.deleteAgenda(agenda);
+                    }
+
+                    // Berikan notifikasi bahwa penghapusan berhasil
+                    JOptionPane.showMessageDialog(this, "Semua agenda pada tanggal " + calendarPanel1.getSelectedDate() + " berhasil dihapus.");
+
+                    // Update tampilan 
+                    updateAgendaList();
+                } catch (SQLException ex) {
+                    // Tampilkan pesan error jika terjadi kesalahan saat menghapus agenda
+                    JOptionPane.showMessageDialog(this,
+                            "Terjadi kesalahan saat menghapus agenda: " + ex.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        } else {
+            // Jika tidak ada agenda pada hari yang dipilih
+            JOptionPane.showMessageDialog(this, "Tidak ada agenda pada tanggal " + calendarPanel1.getSelectedDate() + ".", "Peringatan", JOptionPane.WARNING_MESSAGE);
+        }
+    }//GEN-LAST:event_jButton4ActionPerformed
 
     /**
      * @param args the command line arguments
@@ -345,6 +609,9 @@ public class FormAgendaPribadi extends javax.swing.JFrame {
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private com.github.lgooddatepicker.components.CalendarPanel calendarPanel1;
     private javax.swing.JButton jButton1;
+    private javax.swing.JButton jButton2;
+    private javax.swing.JButton jButton3;
+    private javax.swing.JButton jButton4;
     private javax.swing.JPanel jPanel1;
     private javax.swing.JPanel jPanel2;
     private javax.swing.JPanel jPanel3;
